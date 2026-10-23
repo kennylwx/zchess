@@ -3,7 +3,7 @@ import { createInterface } from 'node:readline/promises';
 import { stdin, stdout } from 'node:process';
 import { Chess, START_FEN } from '@zchess/chess';
 import { modelInput } from './input.js';
-import { ChessServerClient } from './api.js';
+import { ChessServerClient, serverUrlFromArgs } from './api.js';
 import { render } from './ui.js';
 import { clearGraphics, renderGraphics, type GraphicsMode } from './graphics.js';
 import { detectGraphics } from './terminal.js';
@@ -20,7 +20,8 @@ Usage: chess [--elo 1500] [--color white|black] [--fen FEN]
 
 Run "chess" with no options to open the Play / Load game menu.
 Moves accept UCI (e2e4), SAN (Nf3), or free text ("move the queen up by 1").
-Stockfish is included and runs locally. Only free text requires the Chess server.
+Stockfish is included and runs locally. Free text requires a configured Chess server.
+Set --server URL or ZCHESS_SERVER_URL; the backend needs TYPESAFE_API_KEY.
 Games are saved automatically in ~/.local/share/zchess/games.sqlite.
 Commands: /fen, /fen <position>, /undo, /help, /back, /quit`;
 
@@ -64,6 +65,7 @@ export async function run(args: string[], installation?: { version: string; home
     const index = args.indexOf(name);
     return index < 0 ? fallback : (args[index + 1] ?? fallback);
   };
+  const serverUrl = serverUrlFromArgs(args);
   const graphics = get('--graphics', 'auto') as GraphicsMode;
   if (!['auto', 'kitty', 'text', 'ascii'].includes(graphics)) throw new Error('Graphics must be auto, kitty, text, or ascii.');
   const depth = Number(get('--depth', '12'));
@@ -97,7 +99,7 @@ export async function run(args: string[], installation?: { version: string; home
         config = choice;
       }
       if (config) {
-        const again = await playGame(config, { useGraphics, ascii: graphics === 'ascii', cellAspect, depth, serverUrl: get('--server', process.env.ZCHESS_SERVER_URL || 'http://localhost:8000')!, store, sharedScreen: interactiveMenu });
+        const again = await playGame(config, { useGraphics, ascii: graphics === 'ascii', cellAspect, depth, serverUrl, store, sharedScreen: interactiveMenu });
         if (again && config.saved) returnToSavedGames = true;
         if (direct || !again) keepGoing = false;
       }
@@ -244,7 +246,7 @@ function rawPrompt<T>(prompt: string, onKey: (text: string, key: Key, finish: (v
   });
 }
 
-async function playGame(config: GameConfig, options: { useGraphics: boolean; ascii: boolean; cellAspect: number; depth: number; serverUrl: string; store: GameStore; sharedScreen: boolean }): Promise<boolean> {
+async function playGame(config: GameConfig, options: { useGraphics: boolean; ascii: boolean; cellAspect: number; depth: number; serverUrl: string | undefined; store: GameStore; sharedScreen: boolean }): Promise<boolean> {
   const { elo, human, saved } = config;
   let startFen = saved?.startFen ?? config.fen ?? START_FEN;
   const chess = new Chess(startFen);

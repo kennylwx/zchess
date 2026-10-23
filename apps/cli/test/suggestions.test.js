@@ -44,7 +44,11 @@ test('strict SAN does not strip a wrong check marker or annotations', async () =
 
 test('provider outages retain their error and include legal suggestions', async () => {
   const server = { resolve: async () => { throw new ResolutionError('TypeSafe unavailable', 502); } };
-  await assert.rejects(modelInput('move my pawn', new Chess(), server), /TypeSafe unavailable.*Try:/);
+  await assert.rejects(modelInput('move my pawn', new Chess(), server), error => {
+    assert.match(error.message, /TypeSafe unavailable.*Try:/);
+    assert.ok(!error.message.includes('No exact match'));
+    return true;
+  });
 });
 
 for (const query of ['move my pawn to e4', 'knight to f3', 'take the queen', 'hello there', '???', 'e9', 'e4+', 'e2→e4', '♘f3', 'N×f3', 'move my rook to e5']) {

@@ -46,7 +46,7 @@ export async function modelInput(raw:string, chess:Chess, server?:MoveResolver):
     if (error instanceof ResolutionError && error.status === 422) throw new Error(suggestionMessage(text, chess));
     if (error instanceof Error && error.name === 'AbortError') throw error;
     const detail = error instanceof Error ? error.message : String(error);
-    throw new Error(`${detail}. ${suggestionMessage(text, chess)}`);
+    throw new Error(`${detail.replace(/[.!]\s*$/, '')}. ${suggestionMessage(text, chess).replace(/^No exact match\. /, '')}`);
   }
   return { type: 'move', value: result.move, fen: result.fen, explanation: result.explanation, source: 'jev' };
 }

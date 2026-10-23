@@ -78,3 +78,12 @@ async def test_uncertain_move_requires_clarification(monkeypatch):
     with pytest.raises(HTTPException) as error:
         await resolve(ResolveRequest(instruction="move that pawn", fen=chess.STARTING_FEN))
     assert error.value.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_missing_provider_configuration_is_not_a_move_matching_failure(monkeypatch):
+    monkeypatch.delenv("TYPESAFE_API_KEY", raising=False)
+    with pytest.raises(HTTPException) as error:
+        await resolve(ResolveRequest(instruction="pawn to e4", fen=chess.STARTING_FEN))
+    assert error.value.status_code == 503
+    assert error.value.detail == "TYPESAFE_API_KEY is not configured"
