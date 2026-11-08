@@ -10,6 +10,7 @@ import { GameScreen, MenuScreen } from './screen.js';
 import { moveHistory, undoTurn } from './history.js';
 import { GameStore, type SavedGame } from './store.js';
 import type { Key } from 'node:readline';
+import { OPENING_KINDS, type OpeningKind, type OpeningLine } from './openings.js';
 
 const HELP = `chess — terminal chess
 
@@ -108,23 +109,85 @@ async function mainMenu(store: GameStore, screen: MenuScreen, openSavedGames = f
         if (game) return game;
         continue;
       }
-      screen.draw('ZCHESS  /  LOCAL STOCKFISH', '  1  Play\n  2  Load a saved game\n  3  Quit', '');
-      const choice = await menuKey('Select › ', ['1', '2', '3']);
+      screen.draw('ZCHESS  /  LOCAL STOCKFISH', '  1  Play\n  2  Learn an opening\n  3  Load a saved game\n  4  Quit', '');
+      const choice = await menuKey('Select › ', ['1', '2', '3', '4']);
       if (choice === 'q') return 'quit';
       if (choice === 'b') continue;
-      if (choice === '3') return 'quit';
+      if (choice === '4') return 'quit';
       if (choice === '1') {
         const game = await newGameMenu(screen);
         if (game === 'quit') return 'quit';
         if (game) return game;
       }
-      if (choice === '2' || choice === 'load') {
+      if (choice === '2') {
+        await learnMenu(screen);
+      }
+      if (choice === '3' || choice === 'load') {
         const game = await savedGamesMenu(store, screen);
         if (game === 'quit') return 'quit';
         if (game) return game;
       }
     }
   } finally { rl.close(); }
+}
+
+async function learnMenu(screen: MenuScreen): Promise<void> {
+  while (true) {
+    const kinds = OPENING_KINDS.map((kind, index) => `  ${index + 1}  ${kind.name}`);
+    const back = OPENING_KINDS.length + 1;
+    const quit = back + 1;
+    kinds.push(`  ${back}  Back`, `  ${quit}  Quit`);
+    screen.draw('LEARN  /  OPENING FAMILIES', kinds.join('\n'), '');
+    const choice = await menuKey('Choose an opening family › ', Array.from({ length: quit }, (_, i) => String(i + 1)));
+    if (choice === 'q' || Number(choice) === quit) return;
+    if (Number(choice) === back) return;
+    const kind = OPENING_KINDS[Number(choice) - 1];
+    if (kind && await openingLinesMenu(screen, kind) === 'quit') return;
+  }
+}
+
+async function openingLinesMenu(screen: MenuScreen, kind: OpeningKind): Promise<'back' | 'quit'> {
+  while (true) {
+    const lines = kind.lines.map((line, index) => `  ${index + 1}  ${line.name}`);
+    const back = kind.lines.length + 1;
+    const quit = back + 1;
+    lines.push(`  ${back}  Back`, `  ${quit}  Quit`);
+    screen.draw(kind.name.toUpperCase(), lines.join('\n'), '');
+    const choice = await menuKey('Choose a line › ', Array.from({ length: quit }, (_, i) => String(i + 1)));
+    if (choice === 'q' || Number(choice) === quit) return 'quit';
+    if (Number(choice) === back) return 'back';
+    const selected = Number(choice) - 1;
+    if (kind.lines[selected]) await learnLine(screen, kind, selected);
+  }
+}
+
+async function learnLine(screen: MenuScreen, kind: OpeningKind, initial: number): Promise<void> {
+  let variation = initial;
+  let ply = 0;
+  while (true) {
+    const line: OpeningLine = kind.lines[variation]!;
+    const position = new Chess(START_FEN);
+    for (const move of line.moves.slice(0, ply)) position.play(move);
+    const moveList = line.moves.map((move, index) => `${index % 2 === 0 ? `${Math.floor(index / 2) + 1}.` : ''}${move}`).join(' ');
+    screen.draw(`LEARN  /  ${line.name.toUpperCase()}  ·  ${ply}/${line.moves.length} PLIES`,
+      `${render(position, { perspective: 'w', compact: true, color: screen.active })}\n${moveList}\n\n${ply === line.moves.length ? 'End of line' : `Next: ${line.moves[ply]}`}`,
+      '← Previous move     → Next move     Tab Change variation     Esc Back');
+    const action = await rawPrompt<'left' | 'right' | 'tab' | 'back' | 'quit'>('', (_text, key, finish) => {
+      if (key?.ctrl && key.name === 'c') { finish('quit'); return; }
+      if (key?.name === 'left') finish('left');
+      else if (key?.name === 'right') finish('right');
+      else if (key?.name === 'tab') finish('tab');
+      else if (key?.name === 'escape' || key?.name === 'backspace') finish('back');
+      else if (_text === '/') finish('back');
+    });
+    if (action === 'quit' || action === 'back') return;
+    if (action === 'left') ply = Math.max(0, ply - 1);
+    if (action === 'right') ply = Math.min(line.moves.length, ply + 1);
+    if (action === 'tab') {
+      variation = (variation + 1) % kind.lines.length;
+      ply = Math.min(ply, kind.lines[variation]!.moves.length);
+    }
+  }
 }
 
 async function savedGamesMenu(store: GameStore, screen: MenuScreen): Promise<GameConfig | 'quit' | null> {
